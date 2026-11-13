@@ -33,6 +33,18 @@ if (-not $Repo -and (Test-Path (Join-Path $ketu "versioni.json"))) {
 
 # 1) Python
 Hapi "1/4 Python $PYVER"
+if (-not $Python -and -not (Test-Path $py)) {
+    # Python 3.13 eshte tashme ne kete PC? Perdore ate (instaluesi i Python-it nuk instalon dot nje kopje te dyte
+    # te te njejtit version: vetem e "modifikon" ate qe ekziston). Librarite shkojne gjithsesi te .venv i Renditesit.
+    foreach ($root in "HKCU:\Software\Python\PythonCore\3.13\InstallPath", "HKLM:\Software\Python\PythonCore\3.13\InstallPath") {
+        $ip = (Get-ItemProperty $root -ErrorAction SilentlyContinue).'(default)'
+        if ($ip -and (Test-Path (Join-Path $ip "python.exe"))) {
+            $py = Join-Path $ip "python.exe"
+            Write-Host "Python 3.13 eshte tashme ne kete PC, po e perdor: $py"
+            break
+        }
+    }
+}
 if (Test-Path $py) { Write-Host "Eshte tashme: $py" }
 else {
     $exe = Join-Path $env:TEMP "python-$PYVER-amd64.exe"
