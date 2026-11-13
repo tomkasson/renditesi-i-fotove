@@ -1,0 +1,27 @@
+MBLEDHESI I FOTOVE - per PC-ne e vjeter (Windows 7)
+====================================================
+
+Cfare ben: gjen fotot (dhe sipas deshires videot) ne te gjithe disqet e PC-se dhe i kopjon ne USB.
+Kur USB-ja mbushet, vazhdon me USB-ne tjeter nga aty ku mbeti. Nuk instalohet asgje.
+
+NE PC-NE E VJETER
+1. Kopjo kete dosje ("mbledhesi") ne USB-ne e pare.
+2. Fut USB-ne ne PC-ne e vjeter, hap dosjen dhe kliko dy here "Mbledhesi.bat".
+3. Heren e pare te pyet: "Te kopjohen edhe videot?" -> shkruaj p (po) ose j (jo) dhe shtyp Enter.
+4. Te tregon sa foto ka dhe rreth sa USB duhen. Pastaj kopjon. Mos e hiq USB-ne derisa te thote "U kopjuan".
+5. Nese thote "Mbeten edhe ... skedare": hiq USB-ne, fut tjetren, kopjo edhe aty dosjen "mbledhesi"
+   dhe hap perseri "Mbledhesi.bat". Vazhdon vete aty ku mbeti (fotot e kopjuara nuk kopjohen dy here).
+6. Kur thote "Gjithcka u kopjua. Mbarove!" ke mbaruar.
+
+NE PC-NE E RE
+1. Nga cdo USB kopjo dosjen "Fotot nga PC i vjeter" ne te njejtin vend ne PC-ne e re
+   (p.sh. Dokumentet). Dosjet bashkohen, asgje nuk mbishkruhet.
+2. Hap Renditesin e Fotove -> Skano -> shto dosjen "Fotot nga PC i vjeter" -> Skano.
+
+SHENIME
+- Fotot kopjohen te parat, videot pas tyre. Data e fotove ruhet.
+- Nuk kopjohen dosjet e Windows-it dhe te programeve, as ikonat e vogla (nen 20 KB).
+- E njejta foto qe ndodhet ne dy vende kopjohet nje here.
+- USB FAT32: nuk merr skedare mbi 4 GB (video shume te gjata). Programi te paralajmeron.
+- Cfare u kopjua mbahet mend ne PC-ne e vjeter: C:\Users\<emri>\Mbledhesi\ (kopjuar.txt, ditari.txt).
+  Per ta nisur nga fillimi, fshi ate dosje.

@@ -1,0 +1,9 @@
+# Të dhënat dhe mjedisi lokal: NUK publikohen
+.venv/
+cache/
+__pycache__/
+*.pyc
+# shënimet e zhvillimit dhe testet përmbajnë emra të familjes: mbeten vetëm në këtë PC
+CLAUDE.md
+tests/
+.claude/
