@@ -204,7 +204,7 @@ else:
     if not ss.get("groups"):
         st.info("Ky skanim nuk ka persona.", icon=":material/face_retouching_off:")
         st.stop()
-    persons = ui.prepare_people()
+    persons = ui.visible(ui.prepare_people())  # pa të fshehurit
     n_named = sum(1 for r in persons if ss.names.get(r, "").strip())
     c2, c3 = st.columns([1.4, 3.6], vertical_alignment="center")
     who = c2.segmented_control("Kush", ["Me emër", "Pa emër", "Të gjithë"], default="Të gjithë", key="db_who",

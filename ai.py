@@ -355,6 +355,57 @@ def name_for(cen, known, rejected=None):
     return name
 
 
+HIDE_SIM = 0.60  # si NAME_SIM: një grup kaq i ngjashëm me një person të fshehur fshihet edhe në skanimin tjetër
+
+
+def _hidden_file():
+    return PEOPLE.replace(".json", "_fshehur.json")
+
+
+def load_hidden():
+    """[qendrat e personave që përdoruesi i fshehu: "nuk e njoh / s'më duhet"]."""
+    try:
+        with open(_hidden_file(), encoding="utf-8") as f:
+            return [list(map(float, v)) for v in json.load(f) if v]
+    except Exception:
+        return []
+
+
+def _write_hidden(vs):
+    p = _hidden_file()
+    os.makedirs(os.path.dirname(p), exist_ok=True)
+    with open(p + ".tmp", "w", encoding="utf-8") as f:
+        json.dump([[round(float(x), 5) for x in v] for v in vs], f)
+    os.replace(p + ".tmp", p)
+
+
+def hide(cens):
+    """Mbaj mend: këta persona nuk i duhen përdoruesit (fshihen te Personat dhe s'marrin dosje)."""
+    vs = [_unit(v) for v in load_hidden()]
+    for c in map(_unit, cens):
+        if not vs or max(float(v @ c) for v in vs) < SAME_PART:
+            vs.append(c)
+    _write_hidden(vs[-2000:])
+
+
+def unhide(cens):
+    """Kthe personat e fshehur (të gjitha qendrat që u ngjajnë këtyre ≥ HIDE_SIM)."""
+    cens = [_unit(c) for c in cens]
+    _write_hidden([v for v in load_hidden() if not cens or max(float(_unit(v) @ c) for c in cens) < HIDE_SIM])
+
+
+def is_hidden(cen, hidden, known=None):
+    """A i ngjan ky grup një personi të fshehur (≥ HIDE_SIM) më shumë se çdo emri të njohur?"""
+    if not hidden:
+        return False
+    s = float(np.max(np.asarray(hidden, dtype=np.float32) @ cen))
+    if s < HIDE_SIM:
+        return False
+    best_name = max((float(np.max(np.asarray(vs, dtype=np.float32) @ cen)) for vs in (known or {}).values() if vs),
+                    default=0.0)
+    return s > best_name
+
+
 def load_rejected():
     """{emri: [qendrat e grupeve që përdoruesi i ndau me ✂️ nga ky emër]}."""
     try:

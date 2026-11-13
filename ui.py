@@ -159,8 +159,11 @@ def photo_strip(paths):
     return [(t, os.path.basename(p)) for t, p in zip(res, paths) if t]
 
 
+DLG_N = 30  # sa foto hap dritaria "Të gjitha fotot" njëherësh (më shumë = më ngadalë herën e parë)
+
+
 def _more():
-    ss.dlg_n = ss.get("dlg_n", 60) + 60
+    ss.dlg_n = ss.get("dlg_n", DLG_N) + DLG_N
 
 
 # ---------- Personat: një person = një ose disa grupe fytyrash ----------
@@ -195,6 +198,7 @@ def init_people(groups):
             else:
                 first[n.casefold()] = g["id"]
     apply_fixes(groups)
+    mark_hidden(groups)
     ss.people_for = id(groups)
 
 
@@ -248,9 +252,84 @@ def apply_fixes(groups):
                 ss.dismissed.add(key)
 
 
+def mark_hidden(groups):
+    """ss.hidden = personat pa emër që i ngjajnë një personi të fshehur më parë ("nuk e njoh / s'më duhet").
+    Ata nuk shfaqen te Personat dhe nuk marrin dosje (si 'Përfshi' i hequr): fotot shkojnë te 'Të tjerë'."""
+    ss.hidden = set()
+    if ai is None:
+        return
+    try:
+        hidden, known = ai.load_hidden(), ai.load_people()
+    except Exception:
+        return
+    if not hidden:
+        return
+    for r in {root(g["id"]) for g in groups}:
+        if not ss.names.get(r, "").strip() and ai.is_hidden(ss.C[r], hidden, known):
+            ss.hidden.add(r)
+            ss.excl.add(r)
+
+
+def _hide(r):
+    r = root(r)
+    try:
+        ai.hide([part_centroid(g) for g in members(r)] + [ss.C[g] for g in members(r)])
+    except Exception as e:
+        ss.save_err = f"Fshehja nuk u ruajt: {e}"
+    ss.setdefault("hidden", set()).add(r)
+    ss.excl.add(r)
+    st.toast(f"{plabel(r)} u fsheh. E gjen te 'Të fshehur' poshtë, nëse do ta kthesh.", icon=":material/visibility_off:")
+
+
+def _unhide(r):
+    r = root(r)
+    try:
+        ai.unhide([part_centroid(g) for g in members(r)] + [ss.C[g] for g in members(r)])
+    except Exception as e:
+        ss.save_err = f"Kthimi nuk u ruajt: {e}"
+    ss.setdefault("hidden", set()).discard(r)
+    ss.excl.discard(r)
+
+
+def prewarm(shown, k=DLG_N):
+    """Përgatit në sfond pamjet e fytyrave që hap dritarja 'Të gjitha fotot' (k të parat për çdo person), që hapja
+    e parë të mos presë leximin e fotove të mëdha nga disku. Një herë për çdo skanim të hapur."""
+    if ai is None or ss.get("prewarm_for") == id(ss.get("groups")):
+        return
+    ss.prewarm_for = id(ss.get("groups"))
+    todo, seen = [], set()
+    for r in shown:
+        n = 0
+        for rec, f in person_faces(r, mix=False):
+            if rec["path"] in seen:  # si face_items: një fytyrë për foto
+                continue
+            seen.add(rec["path"])
+            todo.append((rec["path"], tuple(f["box"])))
+            n += 1
+            if n >= k:
+                break
+    import threading
+    from concurrent.futures import ThreadPoolExecutor
+
+    def run():
+        with ThreadPoolExecutor(max_workers=3) as ex:
+            list(ex.map(lambda a: ai.face_thumb(*a), todo))
+
+    threading.Thread(target=run, daemon=True, name="renditesi-pamjet").start()
+
+
+def visible(persons):
+    """Personat pa ata të fshehur."""
+    h = ss.get("hidden") or set()
+    return [r for r in persons if r not in h]
+
+
 def ensure_people_state():
     """Gjendja e fytyrave të hequra (moved/dismissed/face_no/gidx). Mund të mungojë kur rifreskohet vetëm
     një dialog (fragment, pa rrjedhën kryesore) në një sesion të nisur me version tjetër të app.py."""
+    if "hidden" not in ss and ss.get("groups"):
+        ss.hidden = set()
+        mark_hidden(ss.groups)
     if "moved" not in ss:
         ss.moved, ss.dismissed, ss.face_no, ss.gidx = {}, set(), {}, {}
         if ss.get("groups"):
@@ -930,7 +1009,7 @@ def show_all_dialog(r):
                "**🧺 Fotot pa vend**, ku AI-ja propozon kujt mund t'i përkasë.")
     view = st.radio("Pamja", ["🙂 Vetëm fytyra (e prerë)", "🖼️ Foto e plotë (pa prerje)"],
                     horizontal=True, key="dlg_view", label_visibility="collapsed")
-    n = min(ss.get("dlg_n", 60), len(paths))
+    n = min(ss.get("dlg_n", DLG_N), len(paths))
     faces_view = view.startswith("🙂")
     with st.spinner("Po përgatis fotot..."):
         items = face_items(faces, n) if faces_view else photo_items(paths[:n])
@@ -945,7 +1024,7 @@ def show_all_dialog(r):
             st.checkbox("❌ Jo ky", key=key, on_change=_mark_not, args=(r, p))
     b1, b2 = st.columns(2)
     if n < len(paths):
-        b1.button(f"⬇ Shfaq edhe 60 ({n} nga {len(paths)})", on_click=_more, width="stretch")
+        b1.button(f"⬇ Shfaq edhe {min(DLG_N, len(paths) - n)} ({n} nga {len(paths)})", on_click=_more, width="stretch")
     if b2.button("✔ Mbaro", type="primary", width="stretch"):
         st.rerun()
     if gone:
@@ -1152,10 +1231,14 @@ def person_grid(tiles):
                 strong = sum(s >= AUTO_PICK for _, s in cands)
                 st.caption(f"{n_paths} foto" + (f" · {len(mem)} pjesë" if len(mem) > 1 else "")
                            + (" · :orange[jashtë]" if r in ss.excl else ""))
-                b1, b2 = st.columns(2, gap="small")
+                b1, b2, b3 = st.columns(3, gap="small")
+                if not named:
+                    b3.button(":material/visibility_off:", key=gk(f"thide_{r}"), width="stretch", on_click=_hide,
+                              args=(r,), help="Nuk e njoh / s'më duhet: fshihe këtu dhe në skanimet e tjera. "
+                                              "Fotot e tij shkojnë te 'Të tjerë'. Kthehet nga 'Të fshehur' poshtë.")
                 if b1.button(":material/photo_library:", key=gk(f"tall_{r}"), width="stretch",
                              help=f"Shiko të gjitha {n_paths} fotot (dhe hiq ato që s'janë ky person)"):
-                    ss.dlg_n = 60
+                    ss.dlg_n = DLG_N
                     show_all_dialog(r)
                 if b2.button(":material/person_search:" + (f" {strong}" if strong else ""), key=gk(f"tfind_{r}"),
                              width="stretch", disabled=not cands, type="primary" if strong else "secondary",
@@ -1306,7 +1389,7 @@ def person_panel(r):
         b1, b2, b3 = st.columns(3)
         if b1.button(f"Fotot ({len(paths)})", icon=":material/photo_library:", key=gk(f"dball_{r}"),
                      width="stretch", help="Të gjitha fotot; ❌ heq ato që nuk janë ky person"):
-            ss.dlg_n = 60
+            ss.dlg_n = DLG_N
             show_all_dialog(r)
         if b2.button("Gjej" + (f" ({strong})" if strong else ""), icon=":material/person_search:",
                      key=gk(f"dbfind_{r}"), width="stretch", disabled=not cands,
@@ -1522,6 +1605,7 @@ def prepare_people():
 
 def shown_persons(persons):
     """Personat që shfaqen dhe përfshihen: aq sa zgjodhe (ss.show_n, si parazgjedhje 30) + gjithmonë ata me emër."""
+    persons = visible(persons)
     n = min(len(persons), ss.get("show_n") or 30)
     shown = persons[:n] + [r for r in persons[n:] if ss.names.get(r, "").strip()]
     ss.shown_set = set(shown)  # sugjerimet për fytyrat e hequra: vetëm te këta
@@ -1598,7 +1682,7 @@ def person_cards(shown):
             b1, b2, b3, _ = st.columns([2, 2, 2, 3])
             if b1.button(f"Të gjitha ({len(paths)})", icon=":material/visibility:", key=gk(f"all_{r}"),
                          width="stretch"):
-                ss.dlg_n = 60
+                ss.dlg_n = DLG_N
                 show_all_dialog(r)
             if b2.button("Gjej të tjera" + (f" ({strong})" if strong else ""), icon=":material/person_search:",
                          key=gk(f"find_{r}"), width="stretch", disabled=not cands,

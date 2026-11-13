@@ -30,7 +30,7 @@ if not groups:
     ui.next_step("Vazhdo: Rendit", "rendit")
     st.stop()
 
-persons = ui.prepare_people()
+persons = ui.visible(ui.prepare_people())  # pa ata që u fshehën ("nuk e njoh / s'më duhet")
 n_named = sum(1 for r in persons if ss.names.get(r, "").strip())
 
 # ----- koka: titulli + përparimi -----
@@ -55,7 +55,7 @@ with t4.popover("Sa", icon=":material/tune:", width="stretch", help="Sa persona 
     if len(groups) > 1:
         if ss.get("show_n") and ss.show_n > len(groups):
             ss.show_n = len(groups)
-        st.slider("Sa persona të shfaq dhe përfshi", 1, len(groups), min(len(persons), 30), key="show_n",
+        st.slider("Sa persona të shfaq dhe përfshi", 1, len(groups), min(len(groups), 30), key="show_n",
                   persist_state="session",
                   help="Fotot e personave që nuk shfaqen shkojnë te 'Të tjerë'. Ata me emër shfaqen gjithmonë.")
 with t5.popover("", icon=":material/help:", width="stretch", help="Si funksionon?"):
@@ -88,9 +88,29 @@ elif view == ui.VIEW_CARDS:
 else:
     ui.person_grid([r for r in shown if keep(r, shown)])
 
+ui.prewarm(shown)  # pamjet e fytyrave për "Të gjitha fotot" përgatiten në sfond: hapja e parë s'pret diskun
+
 err = ss.pop("save_err", None)
 if err:
     st.error(err, icon=":material/error:")
+
+hid = sorted(ss.get("hidden") or set(), key=lambda r: -len(ui.person_paths(r)))
+if hid:
+    with st.expander(f":material/visibility_off: Të fshehur · {len(hid)} persona që s'i njeh ose s'të duhen"):
+        st.caption("Nuk dalin te lista dhe nuk marrin dosje (fotot e tyre shkojnë te 'Të tjerë'). Mbahen mend edhe në "
+                   "skanimet e tjera. **Ktheje** nëse e fshehe gabimisht.")
+        thumbs = {r: (ai.face_thumb(*c, size=120, square=True) if (c := ui.cover(r)) else None) for r in hid[:42]}
+        for i in range(0, min(len(hid), 42), 7):
+            cols = st.columns(7, gap="small")
+            for col, r in zip(cols, hid[i:i + 7]):
+                with col.container(border=True, gap="small"):
+                    if thumbs.get(r):
+                        st.image(thumbs[r], width="stretch")
+                    st.caption(f"{len(ui.person_paths(r))} foto")
+                    st.button("Ktheje", icon=":material/visibility:", key=ui.gk(f"unhide_{r}"), on_click=ui._unhide,
+                              args=(r,), width="stretch")
+        if len(hid) > 42:
+            st.caption(f"... dhe {len(hid) - 42} të tjerë.")
 
 known = ai.load_people()
 with st.expander(f":material/bookmark: Kujtesa e emrave · {len(known)} emra"):
