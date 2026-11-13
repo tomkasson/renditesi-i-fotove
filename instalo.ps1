@@ -8,6 +8,7 @@ param(
     [string]$Dega = "main",
     [switch]$PaLibrari,        # vetem per prova: mos instalo librarite
     [switch]$PaIkona,          # vetem per prova: mos krijo ikonat
+    [switch]$PaRegjistrim,     # vetem per prova: mos e regjistro te "Aplikacionet e instaluara"
     [string]$Baza = "",        # vetem per prova: dosja e instalimit
     [string]$Python = ""       # vetem per prova: python.exe ekzistues
 )
@@ -78,6 +79,20 @@ else {
 # 4) Ikonat dhe nisja
 Hapi "4/4 Ikonat"
 if (-not $PaIkona) { & powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $app "krijo_ikonat.ps1") -AppDir $app }
+
+# "Aplikacionet e instaluara" te Windows-it: Renditesi del aty dhe cinstalohet si cdo program tjeter
+if (-not $PaRegjistrim) {
+    $key = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\RenditesiFotove"
+    $ver = try { (Get-Content (Join-Path $app "versioni.json") -Raw | ConvertFrom-Json).versioni } catch { "" }
+    New-Item -Path $key -Force | Out-Null
+    $cin = '"' + (Join-Path $app "Cinstalo-Renditesin.bat") + '"'
+    $vals = @{ DisplayName = "Renditesi i Fotove"; DisplayVersion = "$ver"; Publisher = "Renditesi i Fotove";
+               InstallLocation = $baza; DisplayIcon = (Join-Path $app "renditesi.ico"); UninstallString = $cin }
+    foreach ($k in $vals.Keys) { New-ItemProperty -Path $key -Name $k -Value $vals[$k] -PropertyType String -Force | Out-Null }
+    New-ItemProperty -Path $key -Name NoModify -Value 1 -PropertyType DWord -Force | Out-Null
+    New-ItemProperty -Path $key -Name NoRepair -Value 1 -PropertyType DWord -Force | Out-Null
+    Write-Host "U regjistrua te 'Aplikacionet e instaluara' (cinstalohet prej andej ose me Cinstalo-Renditesin.bat)."
+}
 Write-Host ""
 Write-Host "Gati! Renditesi i Fotove u instalua. Hape nga ikona ne Desktop." -ForegroundColor Green
 if (-not $PaLibrari) { Start-Process (Join-Path $app ".venv\Scripts\pythonw.exe") -ArgumentList ('"' + (Join-Path $app "Renditesi.pyw") + '"') -WorkingDirectory $app }
