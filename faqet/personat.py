@@ -9,7 +9,7 @@ ai = ui.ai
 HELP = """
 **Si funksionon**
 - AI-ja i grupon fytyrat: çdo kartë është një person, edhe kur del vetëm në 1 foto. Më të shpeshtët dalin të parët.
-- **Sa foto ka** (butonat nën shirit): shiko vetëm personat që dalin në 1 foto, 2, 3–5... Kliko përsëri = të gjithë.
+- **Sa foto ka**: shkruaj **nga** dhe **deri** (p.sh. 4 deri 12), ose shtyp një shkurtore (1, 2, 3–5, 6–20, 21+). *Të gjithë* e heq filtrin.
 - **Shkruaj emrin** te karta. I njëjti emër te dy karta i **bashkon**. Emri ruhet vetë dhe njihet në çdo skanim.
 - AI-ja shpesh e ndan të njëjtin person në disa grupe (mosha, syze, dritë): :material/person_search: **Gjej** i
   gjen dhe i bashkon. Numri te butoni = sa grupe ngjajnë shumë.
@@ -64,19 +64,48 @@ with t5.popover("", icon=":material/help:", width="stretch", help="Si funksionon
 shown = ui.shown_persons(persons)
 lost = ui.homeless()
 
-# ----- filtri sipas numrit të fotove: personat që dalin 1 herë, 2 herë, 3-5... -----
-BUCKETS = {"1 foto": (1, 1), "2 foto": (2, 2), "3–5": (3, 5), "6–20": (6, 20), "21+": (21, 10 ** 9)}
+# ----- filtri sipas numrit të fotove: "nga ... deri ... foto" (çdo kufi), me shkurtore të gatshme -----
+PRESETS_N = {"1": (1, 1), "2": (2, 2), "3–5": (3, 5), "6–20": (6, 20), "21+": (21, None)}
 nphotos = ss.get("pcount") or {r: len(ui.person_paths(r)) for r in persons}  # nga prepare_people
-bcount = {b: sum(1 for r in persons if lo <= nphotos.get(r, 0) <= hi) for b, (lo, hi) in BUCKETS.items()}
-if ss.get("photo_bucket") not in BUCKETS:
-    ss.pop("photo_bucket", None)
-bucket = st.pills("Sa foto ka", list(BUCKETS), key="photo_bucket", persist_state="session",
-                  format_func=lambda b: f"{b} · {bcount[b]}", label_visibility="collapsed",
-                  help="Shfaq vetëm personat që dalin në kaq foto (p.sh. '1 foto' = ata që dalin vetëm një herë). "
-                       "Kliko përsëri për t'i parë të gjithë.")
+maxn = max([nphotos.get(r, 0) for r in persons] or [1])
+ss.pop("photo_bucket", None)  # filtri i vjetër me grupe të gatshme
+
+
+def _set_range(lo, hi):
+    ss.ph_lo, ss.ph_hi = lo, hi
+
+
+def _in(r, lo, hi):
+    n = nphotos.get(r, 0)
+    return n >= lo and (hi is None or n <= hi)
+
+
+if not isinstance(ss.get("ph_lo"), int) or ss.ph_lo < 1:
+    ss.ph_lo = 1
+ss.setdefault("ph_hi", None)  # bosh = pa kufi (vlera vendoset këtu, jo me value=: shmang paralajmërimin)
+if ss.get("ph_hi") is not None and (not isinstance(ss.ph_hi, int) or ss.ph_hi < ss.ph_lo):
+    ss.ph_hi = None
+f1, f2, f3, f4 = st.columns([1.3, 1.1, 1.1, 6], vertical_alignment="bottom")
+f1.markdown("**:material/filter_alt: Sa foto ka:**")
+lo = f2.number_input("nga", min_value=1, step=1, key="ph_lo", persist_state="session",
+                     help="Sa foto ka së paku personi")
+hi = f3.number_input("deri", min_value=1, step=1, key="ph_hi",
+                     persist_state="session", placeholder=f"pa kufi ({maxn})",
+                     help="Sa foto ka së shumti personi (bosh = pa kufi)")
+with f4:
+    row = st.container(horizontal=True, vertical_alignment="bottom", gap="small")
+    for lbl, (a_, b_) in PRESETS_N.items():
+        k = sum(1 for r in persons if _in(r, a_, b_))
+        row.button(f"{lbl} · {k}", key=f"ph_pre_{lbl}", on_click=_set_range, args=(a_, b_),
+                   type="primary" if (lo, hi) == (a_, b_) else "secondary",
+                   help=f"Personat me {lbl} foto")
+    row.button("Të gjithë", icon=":material/close:", key="ph_all", on_click=_set_range, args=(1, None),
+               disabled=(lo, hi) == (1, None))
+bucket = (lo, hi) != (1, None)  # filtri është aktiv
 if bucket:  # filtri kalon mbi të gjithë personat, jo vetëm sa shfaqen ("Sa")
-    lo, hi = BUCKETS[bucket]
-    shown = [r for r in persons if lo <= nphotos.get(r, 0) <= hi]
+    shown = [r for r in persons if _in(r, lo, hi)]
+    st.caption(f"**{len(shown)}** persona me {lo}" + (f"–{hi}" if hi != lo and hi is not None else "" if hi == lo else "+")
+               + " foto")
 if t6.button(f"Fotot pa vend ({len(lost)})", icon=":material/inventory_2:", width="stretch", key="inbox_open",
              disabled=not lost, help="Fytyrat që i hoqe nga një person. AI-ja propozon kujt mund t'i përkasin; deri "
                                      "atëherë shkojnë te 'Të tjerë'."):
