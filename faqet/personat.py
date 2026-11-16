@@ -100,10 +100,12 @@ if view == ui.VIEW_DB:  # databaza: të gjithë personat (jo vetëm sa shfaqen),
     pos = {r: i for i, r in enumerate(persons)}
     pool = sorted(base, key=lambda r: (not ss.names.get(r, "").strip(), pos[r]))
     ui.person_db([r for r in pool if keep(r, pool)])
-elif view == ui.VIEW_CARDS:
-    ui.person_cards([r for r in shown if keep(r, shown)])
 else:
-    ui.person_grid([r for r in shown if keep(r, shown)])
+    # "Vetëm pa emër" dhe kërkimi kalojnë mbi TË GJITHË personat (si filtri "Sa foto ka"), jo vetëm mbi të parët e
+    # "Sa": përndryshe, kur të parët kanë të gjithë emër, "Vetëm pa emër" nuk tregonte asgjë.
+    base = persons if (only or q.strip()) and not bucket else shown
+    tiles = [r for r in base if keep(r, base)]
+    (ui.person_cards if view == ui.VIEW_CARDS else ui.person_grid)(tiles)
 
 ui.prewarm(shown)  # pamjet e fytyrave për "Të gjitha fotot" përgatiten në sfond: hapja e parë s'pret diskun
 
