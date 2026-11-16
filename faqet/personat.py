@@ -8,7 +8,8 @@ ai = ui.ai
 
 HELP = """
 **Si funksionon**
-- AI-ja i grupon fytyrat: çdo kartë është një person (në të paktën disa foto). Më të shpeshtët dalin të parët.
+- AI-ja i grupon fytyrat: çdo kartë është një person, edhe kur del vetëm në 1 foto. Më të shpeshtët dalin të parët.
+- **Sa foto ka** (butonat nën shirit): shiko vetëm personat që dalin në 1 foto, 2, 3–5... Kliko përsëri = të gjithë.
 - **Shkruaj emrin** te karta. I njëjti emër te dy karta i **bashkon**. Emri ruhet vetë dhe njihet në çdo skanim.
 - AI-ja shpesh e ndan të njëjtin person në disa grupe (mosha, syze, dritë): :material/person_search: **Gjej** i
   gjen dhe i bashkon. Numri te butoni = sa grupe ngjajnë shumë.
@@ -25,8 +26,8 @@ if not ss.get("records"):
 groups = ss.get("groups")
 if not groups:
     ui.header("Personat", None, ":material/groups:")
-    st.info("Ky skanim nuk ka persona: ose u bë pa **Personat (AI)**, ose asnjë fytyrë nuk del në më shumë se "
-            "një foto.", icon=":material/face_retouching_off:")
+    st.info("Ky skanim nuk ka persona: ose u bë pa **Personat (AI)**, ose nuk u gjet asnjë fytyrë e qartë.",
+            icon=":material/face_retouching_off:")
     ui.next_step("Vazhdo: Rendit", "rendit")
     st.stop()
 
@@ -62,6 +63,20 @@ with t5.popover("", icon=":material/help:", width="stretch", help="Si funksionon
     st.markdown(HELP)
 shown = ui.shown_persons(persons)
 lost = ui.homeless()
+
+# ----- filtri sipas numrit të fotove: personat që dalin 1 herë, 2 herë, 3-5... -----
+BUCKETS = {"1 foto": (1, 1), "2 foto": (2, 2), "3–5": (3, 5), "6–20": (6, 20), "21+": (21, 10 ** 9)}
+nphotos = ss.get("pcount") or {r: len(ui.person_paths(r)) for r in persons}  # nga prepare_people
+bcount = {b: sum(1 for r in persons if lo <= nphotos.get(r, 0) <= hi) for b, (lo, hi) in BUCKETS.items()}
+if ss.get("photo_bucket") not in BUCKETS:
+    ss.pop("photo_bucket", None)
+bucket = st.pills("Sa foto ka", list(BUCKETS), key="photo_bucket", persist_state="session",
+                  format_func=lambda b: f"{b} · {bcount[b]}", label_visibility="collapsed",
+                  help="Shfaq vetëm personat që dalin në kaq foto (p.sh. '1 foto' = ata që dalin vetëm një herë). "
+                       "Kliko përsëri për t'i parë të gjithë.")
+if bucket:  # filtri kalon mbi të gjithë personat, jo vetëm sa shfaqen ("Sa")
+    lo, hi = BUCKETS[bucket]
+    shown = [r for r in persons if lo <= nphotos.get(r, 0) <= hi]
 if t6.button(f"Fotot pa vend ({len(lost)})", icon=":material/inventory_2:", width="stretch", key="inbox_open",
              disabled=not lost, help="Fytyrat që i hoqe nga një person. AI-ja propozon kujt mund t'i përkasin; deri "
                                      "atëherë shkojnë te 'Të tjerë'."):
@@ -81,7 +96,9 @@ def keep(r, pool):
 
 
 if view == ui.VIEW_DB:  # databaza: të gjithë personat (jo vetëm sa shfaqen), me emër të parët
-    pool = sorted(persons, key=lambda r: (not ss.names.get(r, "").strip(), persons.index(r)))
+    base = shown if bucket else persons
+    pos = {r: i for i, r in enumerate(persons)}
+    pool = sorted(base, key=lambda r: (not ss.names.get(r, "").strip(), pos[r]))
     ui.person_db([r for r in pool if keep(r, pool)])
 elif view == ui.VIEW_CARDS:
     ui.person_cards([r for r in shown if keep(r, shown)])

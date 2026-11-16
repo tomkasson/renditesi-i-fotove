@@ -88,3 +88,19 @@ def delete_file(sid):
 def delete(sid):
     delete_file(sid)
     _write_index([i for i in items() if i["id"] != sid])
+
+
+def replace_groups(sid, records, groups):
+    """Ruan grupet e reja (p.sh. pas një ndryshimi të grupimit) te skanimi i ruajtur, që herën tjetër të hapet shpejt.
+    'groups' duhet t'u referohen pikërisht këtyre 'records' (si pas load), që pickle të ruajë lidhjet."""
+    path = os.path.join(DIR, sid + ".pkl")
+    with open(path, "rb") as f:
+        report = pickle.load(f).get("report") or {}
+    with open(path + ".tmp", "wb") as f:
+        pickle.dump({"records": records, "groups": groups, "report": report}, f, protocol=pickle.HIGHEST_PROTOCOL)
+    os.replace(path + ".tmp", path)
+    data = items()
+    for i in data:
+        if i["id"] == sid:
+            i["grupe"] = len(groups or [])
+    _write_index(data)

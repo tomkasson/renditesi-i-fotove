@@ -218,7 +218,8 @@ def analyze(records, do_content, do_faces, progress=None, batch=16):
 CLUSTER_SIM = 0.45  # ngjashmëria mesatare minimale e një fytyre me anëtarët e grupit
 SMALL_SIM = 0.55    # për fytyrat e vogla (më pak të besueshme) kërkohet më shumë ngjashmëri
 MIN_FACE = 0.04     # fytyrat më të ngushta se 4% e fotos (njerëz në sfond) nuk krijojnë persona
-MIN_PHOTOS = 3      # një person duhet të dalë të paktën në 3 foto
+MIN_PHOTOS = 1      # edhe personat që dalin në 1-2 foto (filtri te Personat i ndan sipas numrit të fotove)
+GROUPS_VERSION = 2  # rritet kur ndryshon mënyra si bëhen grupet: skanimet e ruajtura rigrupohen kur hapen
 SAMPLE = 5000       # sa fytyra grupohen njëherësh (memoria rritet me katrorin e këtij numri)
 
 
@@ -307,6 +308,8 @@ def _cached_labels(X, W):
 def rename_groups(groups):
     """Emrat e grupeve sipas kujtesës së tanishme (p.sh. kur rihapet një skanim i vjetër nga historiku)."""
     known, rejected = load_people(), load_rejected()
+    known = {n: np.asarray(vs, dtype=np.float32) for n, vs in known.items() if vs}
+    rejected = {n: np.asarray(vs, dtype=np.float32) for n, vs in rejected.items() if vs}
     for g in groups or []:
         g["name"] = name_for(g["centroid"], known, rejected)
 
@@ -320,11 +323,16 @@ def cluster_faces(records):
     W = np.array([f["box"][2] for _, f in items])
     labels = _cached_labels(X, W)
     groups = {}
+    solo = int(np.max(labels)) + 1 if len(labels) else 0
     for (r, f), lab in zip(items, labels):
         if lab < 0:
-            continue
+            if f["box"][2] < MIN_FACE:  # fytyrë e vogël në sfond pa grup: jo person më vete
+                continue
+            lab, solo = solo, solo + 1  # fytyrë e qartë që s'i ngjan askujt: person që del vetëm një herë
         groups.setdefault(int(lab), []).append((r, f))
     known, rejected = load_people(), load_rejected()
+    known = {n: np.asarray(vs, dtype=np.float32) for n, vs in known.items() if vs}  # një herë, jo për çdo grup
+    rejected = {n: np.asarray(vs, dtype=np.float32) for n, vs in rejected.items() if vs}
     out = []
     for lab, members in groups.items():
         # Një person = foto të ndryshme; mos e numëro dy herë të njëjtën foto
@@ -332,7 +340,8 @@ def cluster_faces(records):
             continue
         cen = np.mean([f["emb"] for _, f in members], axis=0)
         cen /= np.linalg.norm(cen) + 1e-9
-        out.append({"faces": members, "centroid": cen.astype(np.float32), "name": name_for(cen, known, rejected)})
+        out.append({"faces": members, "centroid": cen.astype(np.float32), "name": name_for(cen, known, rejected),
+                    "v": GROUPS_VERSION})
     out.sort(key=lambda g: -len({m[0]["path"] for m in g["faces"]}))
     for i, g in enumerate(out):
         g["id"] = i
@@ -343,13 +352,13 @@ def name_for(cen, known, rejected=None):
     """Emri i ruajtur që i përket kësaj qendre grupi, ose "" (edhe kur përdoruesi e ka ndarë më parë nga ai emër)."""
     best, name = NAME_SIM, ""
     for n, vs in known.items():
-        if not vs:
+        if vs is None or len(vs) == 0:
             continue
         s = float(np.max(np.asarray(vs, dtype=np.float32) @ cen))
         if s >= best:
             no = (rejected or {}).get(n)
             # i ngjan më shumë një grupi të ndarë me ✂️ nga ky emër sesa pjesëve të pranuara → nuk është ai
-            if no and float(np.max(np.asarray(no, dtype=np.float32) @ cen)) >= max(REJECT_SIM, s):
+            if no is not None and len(no) and float(np.max(np.asarray(no, dtype=np.float32) @ cen)) >= max(REJECT_SIM, s):
                 continue
             best, name = s, n
     return name

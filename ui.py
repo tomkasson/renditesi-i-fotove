@@ -356,6 +356,21 @@ def person_paths(r):
     return out | {p for _, p in moved_in(r)}
 
 
+def person_counts():
+    """{personi: numri i fotove} për të gjithë personat me një kalim (person_paths për secilin është O(N²) kur ka
+    mijëra grupe, p.sh. me personat që dalin vetëm 1 herë)."""
+    gp, rem = ss.gpaths, ss.get("removed") or {}
+    own = ss.owner
+    paths = {}
+    for g in range(len(gp)):
+        r = own.get(g, g)
+        rg = rem.get(g)
+        paths.setdefault(r, set()).update(gp[g] - rg if rg else gp[g])
+    for (g, p), t in (ss.get("moved") or {}).items():
+        paths.setdefault(own.get(t, t), set()).add(p)
+    return {r: len(v) for r, v in paths.items()}
+
+
 def moved_in(r):
     """Fytyrat e hequra nga persona të tjerë që përdoruesi ia dha këtij personi: [(grupi, foto)]."""
     own = ss.owner
@@ -1572,7 +1587,13 @@ def open_scan(sid):
     except Exception as e:
         ss.hist_err = f"Skanimi nuk u hap: {e}"
         return
-    if groups_ and ai is not None:
+    if groups_ and ai is not None and groups_[0].get("v") != getattr(ai, "GROUPS_VERSION", None):
+        try:  # skanim i ruajtur me grupimin e vjetër (p.sh. pa personat me 1-2 foto): rigrupo nga fytyrat e ruajtura
+            groups_ = ai.cluster_faces([r for r in recs_ if not r.get("dup_of")])
+            historiku.replace_groups(sid, recs_, groups_)
+        except Exception as e:
+            ss.hist_err = f"Rigrupimi i fytyrave nuk u bë: {e}"
+    elif groups_ and ai is not None:
         try:
             ai.rename_groups(groups_)  # emrat e dhënë pas atij skanimi
         except Exception:
@@ -1598,7 +1619,9 @@ def prepare_people():
         init_people(groups)
     else:  # sesion i nisur me version tjetër: shto gjendjen e re pa humbur emrat
         ensure_people_state()
-    persons = sorted({root(g["id"]) for g in groups}, key=lambda r: -len(person_paths(r)))
+    cnt = person_counts()
+    ss.pcount = cnt  # numri i fotove për çdo person, i gatshëm për faqet (filtri "Sa foto ka")
+    persons = sorted({root(g["id"]) for g in groups}, key=lambda r: -cnt.get(r, 0))
     save_person_index(persons)
     return persons
 
