@@ -105,6 +105,20 @@ def pick_out():
         ss.out = p
 
 
+def open_photo(p, folder=False):
+    """Hap foton origjinale (ose dosjen me foton të zgjedhur) në Windows."""
+    if not os.path.exists(p):
+        st.toast(f"Fotoja nuk gjendet më këtu: {p}", icon=":material/warning:")
+        return
+    if not os.environ.get("RENDITESI_NO_OPEN"):  # testet automatike nuk hapin dritare
+        if folder:
+            subprocess.Popen(f'explorer /select,"{os.path.normpath(p)}"')
+        else:
+            os.startfile(p)
+    st.toast(("U hap dosja e " if folder else "U hap ") + os.path.basename(p),
+             icon=":material/folder_open:" if folder else ":material/image:")
+
+
 def open_file(p):
     if not os.environ.get("RENDITESI_NO_OPEN"):  # testet automatike nuk hapin dritare
         os.startfile(p)
@@ -294,11 +308,16 @@ def _unhide(r):
 def prewarm(shown, k=DLG_N):
     """Përgatit në sfond pamjet e fytyrave që hap dritarja 'Të gjitha fotot' (k të parat për çdo person), që hapja
     e parë të mos presë leximin e fotove të mëdha nga disku. Një herë për çdo skanim të hapur."""
-    if ai is None or ss.get("prewarm_for") == id(ss.get("groups")):
+    if ai is None:
         return
-    ss.prewarm_for = id(ss.get("groups"))
+    if ss.get("prewarm_for") != id(ss.get("groups")):
+        ss.prewarm_for, ss.prewarmed = id(ss.get("groups")), set()
+    new = [r for r in shown if r not in ss.prewarmed]
+    if not new:
+        return
+    ss.prewarmed.update(new)
     todo, seen = [], set()
-    for r in shown:
+    for r in new:
         n = 0
         for rec, f in person_faces(r, mix=False):
             if rec["path"] in seen:  # si face_items: një fytyrë për foto
@@ -1032,11 +1051,18 @@ def show_all_dialog(r):
     cols = st.columns(k)
     for i, (p, t) in enumerate(items):
         with cols[i % k]:
-            st.image(t, width="stretch", caption=None if faces_view else os.path.basename(p))
+            st.image(t, width="stretch")
+            folder = os.path.basename(os.path.dirname(p)) or os.path.dirname(p)
+            st.caption(f":material/folder: {folder}" + ("" if faces_view else f" · {os.path.basename(p)}"), help=p)
             key = _rm_key(r, p)
             if key not in ss:
                 ss[key] = False
-            st.checkbox("❌ Jo ky", key=key, on_change=_mark_not, args=(r, p))
+            row = st.container(horizontal=True, gap="small", vertical_alignment="center")
+            row.checkbox("❌ Jo ky", key=key, on_change=_mark_not, args=(r, p))
+            pk = _fkey("open", r, p)
+            row.button(":material/open_in_new:", key=pk, on_click=open_photo, args=(p,), help=f"Hap foton: {p}")
+            row.button(":material/folder_open:", key=pk + "_d", on_click=open_photo, args=(p, True),
+                       help="Hap dosjen me këtë foto të zgjedhur")
     b1, b2 = st.columns(2)
     if n < len(paths):
         b1.button(f"⬇ Shfaq edhe {min(DLG_N, len(paths) - n)} ({n} nga {len(paths)})", on_click=_more, width="stretch")
@@ -1214,6 +1240,104 @@ def _more_grid():
 
 
 GRID_K = 7  # dritare në rresht (faqja është "wide")
+STRIP_K = 5  # sa fytyra të tjera dalin të vogla nën çdo kartë
+
+
+def _toggle_psel(r):
+    sel = ss.setdefault("psel", set())
+    (sel.add if ss.get(gk(f"psel_{r}")) else sel.discard)(r)
+
+
+def _psel_now():
+    """Të zgjedhurit (personat kryesorë), pa ata që u bashkuan/fshehën ndërkohë."""
+    sel = {root(r) for r in ss.get("psel") or set()}
+    h = ss.get("hidden") or set()
+    return sorted((r for r in sel if r not in h), key=lambda r: -len(person_paths(r)))
+
+
+def _psel_clear():
+    for r in list(ss.get("psel") or set()):
+        ss.pop(gk(f"psel_{r}"), None)
+    ss.psel = set()
+
+
+def _bulk_name(key):
+    """'Ky është [emri]': të gjithë të zgjedhurit bashkohen te ky person (ekzistues, nga pema ose i ri)."""
+    label = " ".join((ss.get(key) or "").split())
+    sel = _psel_now()
+    if not label or not sel:
+        return
+    q = target_options().get(label)
+    if q is None:  # emër nga pema/Databaza ose i ri: kush ka tashmë këtë emër?
+        q = next((root(r) for r, n in ss.names.items() if n.strip().casefold() == label.casefold()), None)
+    if q is None:  # emër i ri: i zgjedhuri i parë merr emrin
+        q = sel[0]
+        ss.names[q] = label
+    for r in sel:
+        if root(r) != root(q):
+            old_r = ss.names.get(root(r), "").strip()
+            merge(q, r)
+            if old_r and old_r.casefold() != label.casefold():
+                _forget_parts(members(root(q)), [old_r])
+    q = root(q)
+    ss.names[q] = label
+    _drop_name_widgets(q)
+    persist(q)  # kujtesa mëson të gjitha fytyrat: në skanimin tjetër njihen vetë
+    _psel_clear()
+    ss[key] = None
+    st.toast(f"U bashkuan {len(sel)} te {label}", icon=":material/check_circle:")
+
+
+def _bulk_merge():
+    """Janë i njëjti person, por pa emër (ende)."""
+    sel = _psel_now()
+    if len(sel) < 2:
+        return
+    for r in sel[1:]:
+        merge(sel[0], r)
+    q = root(sel[0])
+    _drop_name_widgets(q)
+    if ss.names.get(q, "").strip():
+        persist(q)
+    _psel_clear()
+    st.toast(f"U bashkuan {len(sel)} në një person", icon=":material/link:")
+
+
+def _bulk_hide():
+    sel = _psel_now()
+    for r in sel:
+        _hide(r)
+    _psel_clear()
+
+
+def people_bulk_bar():
+    """Shiriti sipër rrjetës kur ka karta të zgjedhura: kush janë, bashkoji, fshihi."""
+    sel = _psel_now()
+    if not sel:
+        return
+    with st.container(border=True):
+        h1, h2 = st.columns([3, 1], vertical_alignment="center")
+        h1.markdown(f"**:material/check_box: {len(sel)} {'person i zgjedhur' if len(sel) == 1 else 'persona të zgjedhur'}** "
+                    f":gray[· {sum(len(person_paths(r)) for r in sel)} foto]")
+        h2.button("Pastro zgjedhjen", icon=":material/close:", key="psel_clear", on_click=_psel_clear, width="stretch")
+        from concurrent.futures import ThreadPoolExecutor
+
+        cs = [cover(r) for r in sel[:24]]
+        with ThreadPoolExecutor(max_workers=8) as ex:
+            ft = [t for t in ex.map(lambda c: ai.face_thumb(*c) if c else None, cs) if t]
+        if ft:
+            st.image(ft, width=40)
+        a1, a2, a3, a4 = st.columns([3, 1.3, 1.6, 1.4], vertical_alignment="bottom")
+        key = "psel_name"
+        a1.selectbox("Ky është", list(target_options(exclude=sel)), index=None, key=key, accept_new_options=True,
+                     placeholder="Zgjidh emrin ose shkruaj një të ri...",
+                     help="Të gjithë të zgjedhurit bashkohen te ky person dhe kujtesa mëson fytyrat e tyre.")
+        a2.button("Cakto", icon=":material/how_to_reg:", type="primary", key="psel_go", on_click=_bulk_name,
+                  args=(key,), disabled=not ss.get(key), width="stretch")
+        a3.button("Bashkoji pa emër", icon=":material/link:", key="psel_merge", on_click=_bulk_merge,
+                  disabled=len(sel) < 2, width="stretch", help="Janë i njëjti person, por ende s'e di kush")
+        a4.button("Fshihi", icon=":material/visibility_off:", key="psel_hide", on_click=_bulk_hide, width="stretch",
+                  help="Nuk i njoh / s'më duhen: fshihen këtu dhe në skanimet e tjera")
 
 
 def person_grid(tiles):
@@ -1225,12 +1349,32 @@ def person_grid(tiles):
     from concurrent.futures import ThreadPoolExecutor
 
     covers = [cover(r) for r in tiles[:n]]
+    strips_todo = []  # 5 fytyrat e tjera të çdo personi (pa atë të kartës), një për foto
+    for r, c in zip(tiles[:n], covers):
+        seen, mine = {c[0]} if c else set(), []
+        for rec, f in person_faces(r):
+            if rec["path"] not in seen:
+                seen.add(rec["path"])
+                mine.append((rec["path"], tuple(f["box"])))
+                if len(mine) >= STRIP_K:
+                    break
+        strips_todo.append(mine)
+    flat = [a for m in strips_todo for a in m]
     with st.spinner("Po përgatis fytyrat..."), ThreadPoolExecutor(max_workers=8) as ex:
         thumbs = list(ex.map(lambda c: ai.face_thumb(*c, size=160, square=True) if c else None, covers))
+        flat_t = list(ex.map(lambda a: ai.face_thumb(*a), flat))
+    strips, i0 = [], 0
+    for m in strips_todo:
+        strips.append([t for t in flat_t[i0:i0 + len(m)] if t])
+        i0 += len(m)
     for i in range(0, n, GRID_K):
         cols = st.columns(GRID_K, gap="small")
-        for col, r, t in zip(cols, tiles[i:i + GRID_K], thumbs[i:i + GRID_K]):
+        for col, r, t, strip in zip(cols, tiles[i:i + GRID_K], thumbs[i:i + GRID_K], strips[i:i + GRID_K]):
             with col.container(border=True, gap="small"):
+                sk = gk(f"psel_{r}")
+                ss[sk] = r in ss.setdefault("psel", set())
+                st.checkbox("Zgjidh", key=sk, on_change=_toggle_psel, args=(r,),
+                            help="Zgjidh disa karta, pastaj sipër: 'Ky është...', 'Bashkoji' ose 'Fshihi'")
                 if t:
                     st.image(t, width="stretch")
                 key = gk(f"tname_{r}")
@@ -1244,6 +1388,8 @@ def person_grid(tiles):
                 n_paths = len(person_paths(r))
                 cands = candidates(r)
                 strong = sum(s >= AUTO_PICK for _, s in cands)
+                if strip:  # fytyrat e tjera: shihet pa e hapur nëse janë të gjitha të të njëjtit person
+                    st.image(strip, width=24)
                 st.caption(f"{n_paths} foto" + (f" · {len(mem)} pjesë" if len(mem) > 1 else "")
                            + (" · :orange[jashtë]" if r in ss.excl else ""))
                 b1, b2, b3 = st.columns(3, gap="small")

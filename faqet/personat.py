@@ -11,6 +11,10 @@ HELP = """
 - AI-ja i grupon fytyrat: çdo kartë është një person, edhe kur del vetëm në 1 foto. Më të shpeshtët dalin të parët.
 - **Sa foto ka**: shkruaj **nga** dhe **deri** (p.sh. 4 deri 12), ose shtyp një shkurtore (1, 2, 3–5, 6–20, 21+). *Të gjithë* e heq filtrin.
 - **Shkruaj emrin** te karta. I njëjti emër te dy karta i **bashkon**. Emri ruhet vetë dhe njihet në çdo skanim.
+- **Zgjidh disa karta** (kutia sipër fytyrës): sipër del shiriti **Ky është [emri]** (i bashkon të gjitha te ai person),
+  **Bashkoji pa emër** ose **Fshihi**. Fytyrat e vogla nën kartë tregojnë fotot e tjera të personit.
+- Te :material/photo_library: **Fotot**: nën çdo foto del dosja (shtegu kur kalon me miun), :material/open_in_new: e
+  hap foton dhe :material/folder_open: hap dosjen.
 - AI-ja shpesh e ndan të njëjtin person në disa grupe (mosha, syze, dritë): :material/person_search: **Gjej** i
   gjen dhe i bashkon. Numri te butoni = sa grupe ngjajnë shumë.
 - :material/photo_library: **Fotot**: kontrollo dhe hiq me ❌ ato që s'janë ky person. Shkojnë te *Fotot pa vend*.
@@ -134,6 +138,8 @@ else:
     # "Sa": përndryshe, kur të parët kanë të gjithë emër, "Vetëm pa emër" nuk tregonte asgjë.
     base = persons if (only or q.strip()) and not bucket else shown
     tiles = [r for r in base if keep(r, base)]
+    if view != ui.VIEW_CARDS:
+        ui.people_bulk_bar()  # kur ka karta të zgjedhura: "Ky është...", "Bashkoji pa emër", "Fshihi"
     (ui.person_cards if view == ui.VIEW_CARDS else ui.person_grid)(tiles)
 
 ui.prewarm(shown)  # pamjet e fytyrave për "Të gjitha fotot" përgatiten në sfond: hapja e parë s'pret diskun
